@@ -1,0 +1,310 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+
+torch.manual_seed(42)
+
+# -----------------------------
+# 1. Perception Space
+# -----------------------------
+PERCEPTION_DIM = 7
+BATCH_SIZE = 100
+
+
+# -----------------------------
+# 2. Virtue Operators (Nonlinear)
+# -----------------------------
+class VirtueOperator(nn.Module):
+    def __init__(self, input_dim, virtue_index, hidden_dim=16):
+        super().__init__()
+        self.virtue_index = virtue_index
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, input_dim)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = x.clone()
+        dx = 0.1 * torch.tanh(self.fc2(F.relu(self.fc1(x))))
+        x = x + dx
+        return x
+
+
+# -----------------------------
+# 3. Cognitive Chain Architectures
+# -----------------------------
+class VirtueCognitiveChain(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.operators = nn.ModuleList([
+            VirtueOperator(input_dim, 3),
+            VirtueOperator(input_dim, 4),
+            VirtueOperator(input_dim, 5),
+            VirtueOperator(input_dim, 6)
+        ])
+
+    def forward(self, x):
+        for op in self.operators:
+            x = op(x)
+        return x
+
+
+class RecurrentVirtueChain(nn.Module):
+    def __init__(self, input_dim, num_cycles=2):
+        super().__init__()
+        self.operators = nn.ModuleList([
+            VirtueOperator(input_dim, 3),
+            VirtueOperator(input_dim, 4),
+            VirtueOperator(input_dim, 5),
+            VirtueOperator(input_dim, 6)
+        ])
+        self.num_cycles = num_cycles
+
+    def forward(self, x):
+        for _ in range(self.num_cycles):
+            for op in self.operators:
+                x = op(x)
+        return x
+
+
+# -----------------------------
+# 4. Structured Synthetic Data
+# -----------------------------
+def generate_structured_data(batch_size, dim):
+    x = torch.rand(batch_size, dim)
+    y = x.clone()
+
+    y[:, 3] = torch.clamp(y[:, 3] + 0.2 - 0.1 * y[:, 4], 0, 1)
+    y[:, 5] = torch.clamp(y[:, 5] + 0.15 + 0.1 * y[:, 6], 0, 1)
+    y[:, 6] = torch.clamp(y[:, 6] + 0.15 + 0.1 * y[:, 5], 0, 1)
+    return x, y
+
+
+def generate_structured_data_custom(batch_size, dim, t_strength, c_strength):
+    x = torch.rand(batch_size, dim)
+    y = x.clone()
+
+    # Compassion vs Justice trade-off with variable strength
+    y[:, 3] = torch.clamp(y[:, 3] + 0.2 - t_strength * y[:, 4], 0, 1)
+    # Honesty & Generosity cooperation with variable strength
+    y[:, 5] = torch.clamp(y[:, 5] + 0.15 + c_strength * y[:, 6], 0, 1)
+    y[:, 6] = torch.clamp(y[:, 6] + 0.15 + c_strength * y[:, 5], 0, 1)
+    return x, y
+
+
+# -----------------------------
+# 5. Evaluation Framework
+# -----------------------------
+def analyze_virtue_dynamics(model, test_data):
+    with torch.no_grad():
+        outputs = model(test_data)
+        virtue_outputs = outputs[:, 3:]
+        virtue_correlations = torch.corrcoef(virtue_outputs.T)
+        return virtue_correlations.numpy()
+
+
+def calculate_tradeoff_strength(correlations):
+    compassion_justice = abs(correlations[0, 1])
+    honesty_generosity = correlations[2, 3]
+    return compassion_justice, honesty_generosity
+
+
+def plot_virtue_correlations(correlations, dimension_names):
+    virtue_names = dimension_names[3:]
+    plt.figure(figsize=(8, 6))
+    im = plt.imshow(correlations, cmap='RdBu_r', vmin=-1, vmax=1)
+    plt.colorbar(im)
+    plt.xticks(range(4), virtue_names, rotation=45)
+    plt.yticks(range(4), virtue_names)
+    plt.title("Virtue Dimension Correlations")
+    plt.tight_layout()
+    plt.show()
+
+
+# -----------------------------
+# 6. ORIGINAL TRAINING
+# -----------------------------
+model = RecurrentVirtueChain(PERCEPTION_DIM, num_cycles=2)
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+perceptions, target_vectors = generate_structured_data(BATCH_SIZE, PERCEPTION_DIM)
+
+dimension_history = []
+dimension_std_history = []
+dimension_names = ['Visual', 'Auditory', 'Tactile', 'Compassion', 'Justice', 'Honesty', 'Generosity']
+loss_history = []
+
+epochs = 500
+
+for epoch in range(epochs):
+    optimizer.zero_grad()
+    output = model(perceptions)
+
+    loss = criterion(output, target_vectors)
+    loss.backward()
+    optimizer.step()
+
+    dimension_history.append(output.mean(dim=0).detach().numpy())
+    dimension_std_history.append(output.std(dim=0).detach().numpy())
+    loss_history.append(loss.item())
+
+    if (epoch + 1) % 50 == 0:
+        print(f"Epoch {epoch + 1}, Loss: {loss.item():.4f}")
+
+dimension_history = np.array(dimension_history)
+dimension_std_history = np.array(dimension_std_history)
+
+# -----------------------------
+# 7. Post-Training Analysis
+# -----------------------------
+print("\n=== Post-Training Analysis ===")
+virtue_correlations = analyze_virtue_dynamics(model, perceptions)
+compassion_justice, honesty_generosity = calculate_tradeoff_strength(virtue_correlations)
+
+print(f"Compassion-Justice trade-off strength: {compassion_justice:.3f}")
+print(f"Honesty-Generosity cooperation strength: {honesty_generosity:.3f}")
+print("\nFull correlation matrix:")
+print(virtue_correlations)
+
+# -----------------------------
+# 8. SYSTEMATIC TRADE-OFF EXPERIMENT
+# -----------------------------
+print("\n" + "=" * 50)
+print("Starting Systematic Trade-Off Experiment")
+print("=" * 50)
+
+tradeoff_strengths = [0.0, 0.1, 0.3, 0.5, 0.7]
+cooperation_strengths = [0.0, 0.1, 0.3, 0.5, 0.7]
+
+results = []
+
+for t_strength in tradeoff_strengths:
+    for c_strength in cooperation_strengths:
+        print(f"Testing: Trade-off={t_strength}, Cooperation={c_strength}")
+
+        perceptions_exp, targets_exp = generate_structured_data_custom(BATCH_SIZE, PERCEPTION_DIM, t_strength,
+                                                                       c_strength)
+
+        model_exp = RecurrentVirtueChain(PERCEPTION_DIM, num_cycles=2)
+        optimizer_exp = torch.optim.Adam(model_exp.parameters(), lr=0.01)
+        criterion_exp = nn.MSELoss()
+
+        for epoch in range(200):
+            optimizer_exp.zero_grad()
+            output = model_exp(perceptions_exp)
+            loss = criterion_exp(output, targets_exp)
+            loss.backward()
+            optimizer_exp.step()
+
+        model_exp.eval()
+        with torch.no_grad():
+            correlations = analyze_virtue_dynamics(model_exp, perceptions_exp)
+            compassion_justice, honesty_generosity = calculate_tradeoff_strength(correlations)
+            results.append((t_strength, c_strength, compassion_justice, honesty_generosity))
+
+df = pd.DataFrame(results, columns=['Tradeoff_input', 'Cooperation_input',
+                                    'Compassion_Justice_learned', 'Honesty_Generosity_learned'])
+
+print("\n=== Experiment Results ===")
+print(df.head(10))
+
+# -----------------------------
+# 9. Plot Experiment Results
+# -----------------------------
+# -----------------------------
+# 9. Plot Experiment Results <-- ADD THIS RIGHT AFTER YOUR EXPERIMENT RESULTS
+# -----------------------------
+plt.figure(figsize=(14, 6))
+
+# Convert to proper pivot format
+pivot1 = df.pivot(index="Tradeoff_input", columns="Cooperation_input", values="Compassion_Justice_learned")
+pivot2 = df.pivot(index="Tradeoff_input", columns="Cooperation_input", values="Honesty_Generosity_learned")
+
+plt.subplot(1, 2, 1)
+sns.heatmap(pivot1, annot=True, cmap='coolwarm', center=0, vmin=-0.5, vmax=0.5,
+            square=True, cbar_kws={'label': 'Correlation Strength'})
+plt.title("Learned Compassion-Justice Trade-off\n(Negative = Trade-off, Positive = Cooperation)")
+plt.xlabel("Cooperation Input Strength")
+plt.ylabel("Trade-off Input Strength")
+
+plt.subplot(1, 2, 2)
+sns.heatmap(pivot2, annot=True, cmap='coolwarm', center=0, vmin=-0.5, vmax=0.5,
+            square=True, cbar_kws={'label': 'Correlation Strength'})
+plt.title("Learned Honesty-Generosity Cooperation\n(Positive = Cooperation, Negative = Trade-off)")
+plt.xlabel("Cooperation Input Strength")
+plt.ylabel("Trade-off Input Strength")
+
+plt.tight_layout()
+plt.show()
+
+# -----------------------------
+# 9b. Additional Analysis <-- ADD THIS
+# -----------------------------
+print("\n=== Detailed Analysis ===")
+
+# Calculate average learned strengths
+avg_tradeoff = df['Compassion_Justice_learned'].mean()
+avg_cooperation = df['Honesty_Generosity_learned'].mean()
+
+print(f"Average learned trade-off strength: {avg_tradeoff:.3f}")
+print(f"Average learned cooperation strength: {avg_cooperation:.3f}")
+
+# Check if model learns the intended relationships
+successful_tradeoff = (df[df['Tradeoff_input'] > 0]['Compassion_Justice_learned'] < 0).mean()
+successful_cooperation = (df[df['Cooperation_input'] > 0]['Honesty_Generosity_learned'] > 0).mean()
+
+print(f"Success rate for trade-off learning: {successful_tradeoff:.1%}")
+print(f"Success rate for cooperation learning: {successful_cooperation:.1%}")
+
+# Show strongest and weakest relationships
+max_tradeoff = df.loc[df['Compassion_Justice_learned'].idxmin()]
+max_cooperation = df.loc[df['Honesty_Generosity_learned'].idxmax()]
+
+print(f"\nStrongest trade-off: {max_tradeoff['Compassion_Justice_learned']:.3f} "
+      f"(input: T={max_tradeoff['Tradeoff_input']}, C={max_tradeoff['Cooperation_input']})")
+print(f"Strongest cooperation: {max_cooperation['Honesty_Generosity_learned']:.3f} "
+      f"(input: T={max_cooperation['Tradeoff_input']}, C={max_cooperation['Cooperation_input']})")
+
+# -----------------------------
+# 10. ORIGINAL VISUALIZATIONS
+# -----------------------------
+plot_virtue_correlations(virtue_correlations, dimension_names)
+
+plt.figure(figsize=(12, 6))
+colors = ['r', 'g', 'b', 'c', 'm', 'y', 'k']
+for i in range(PERCEPTION_DIM):
+    mean = dimension_history[:, i]
+    std = dimension_std_history[:, i]
+    plt.plot(mean, label=dimension_names[i], color=colors[i])
+    plt.fill_between(np.arange(epochs), mean - std, mean + std, alpha=0.2, color=colors[i])
+
+plt.title("Evolution of Perception Dimensions During Training (Mean ± Std)")
+plt.xlabel("Epoch")
+plt.ylabel("Dimension Value")
+plt.legend()
+plt.show()
+
+pairs = [(3, 4), (3, 5), (4, 6)]
+plt.figure(figsize=(8, 8))
+for idx1, idx2 in pairs:
+    plt.quiver(dimension_history[:-1, idx1], dimension_history[:-1, idx2],
+               dimension_history[1:, idx1] - dimension_history[:-1, idx1],
+               dimension_history[1:, idx2] - dimension_history[:-1, idx2],
+               scale=1, scale_units='xy', angles='xy', alpha=0.6)
+
+plt.xlabel('Dimension Value: ' + ', '.join([dimension_names[p[0]] for p in pairs]))
+plt.ylabel('Dimension Value: ' + ', '.join([dimension_names[p[1]] for p in pairs]))
+plt.title("Trade-Off Dynamics Between Virtues")
+plt.grid(True)
+plt.show()
+
+plt.figure(figsize=(8, 4))
+plt.plot(loss_history)
+plt.title("Training Loss Over Epochs")
+plt.xlabel("Epoch")
+plt.ylabel("MSE Loss")
+plt.show()
